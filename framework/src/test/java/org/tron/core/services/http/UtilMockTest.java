@@ -12,6 +12,7 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Test;
 import org.mockito.Mockito;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.tron.api.GrpcAPI;
 import org.tron.common.utils.Sha256Hash;
 import org.tron.core.capsule.BlockCapsule;
@@ -382,6 +383,39 @@ public class UtilMockTest  {
         "{\"owner_address\":\"owner_address\","
             + "\"contract_address\":\"contract_address\"}";
     Assert.assertEquals(expect, ret2);
+  }
+
+  @Test
+  public void testValidateParameterInvalidBase58Check() {
+    String contract = "{\"owner_address\":\"TKgD8Qnx9Zw3RNjdiU2i5y2Swa2y4QvG6v\","
+        + " \"contract_address\":\"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t\","
+        + " \"visible\":true}";
+    InvalidParameterException ex = Assert.assertThrows(
+        InvalidParameterException.class,
+        () -> Util.validateParameter(contract));
+    Assert.assertEquals(Util.INVALID_ADDRESS_BASE58CHECK, ex.getMessage());
+  }
+
+  @Test
+  public void testValidateParameterOddLengthHex() {
+    String contract = "{\"owner_address\":\"41548794500882809695a8a687866e76d4271a1abc\","
+        + " \"contract_address\":\"41abd4b9367799eaa3197fecb144eb71de1e049150\","
+        + " \"parameter\":\"abc\"}";
+    InvalidParameterException ex = Assert.assertThrows(
+        InvalidParameterException.class,
+        () -> Util.validateParameter(contract));
+    Assert.assertEquals(Util.INVALID_HEX_LENGTH, ex.getMessage());
+  }
+
+  @Test
+  public void testWriteErrorSanitizesPayload() throws Exception {
+    MockHttpServletResponse response = new MockHttpServletResponse();
+    Util.writeError(response, "OTHER_ERROR", Util.INVALID_ADDRESS_BASE58CHECK);
+    String content = response.getContentAsString();
+    Assert.assertTrue(content.contains(Util.INVALID_ADDRESS_BASE58CHECK));
+    Assert.assertTrue(content.contains("OTHER_ERROR"));
+    Assert.assertFalse(content.contains("java.lang"));
+    Assert.assertFalse(content.contains("NullPointerException"));
   }
 
 }

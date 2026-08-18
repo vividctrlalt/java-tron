@@ -3,6 +3,7 @@ package org.tron.core.services.http;
 import com.google.protobuf.ByteString;
 import io.netty.util.internal.StringUtil;
 import java.io.IOException;
+import java.security.InvalidParameterException;
 import java.util.stream.Collectors;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -60,16 +61,17 @@ public class EstimateEnergyServlet extends RateLimiterServlet {
 
       wallet.estimateEnergy(build.build(), trxCap,
           trxExtBuilder, retBuilder, estimateEnergyBuilder);
+    } catch (InvalidParameterException e) {
+      Util.writeError(response, Return.response_code.OTHER_ERROR.name(), e.getMessage());
+      return;
     } catch (ContractValidateException e) {
-      retBuilder.setResult(false).setCode(Return.response_code.CONTRACT_VALIDATE_ERROR)
-          .setMessage(ByteString.copyFromUtf8(e.getMessage()));
+      String message = e.getMessage() != null ? e.getMessage() : "contract validate error";
+      Util.writeError(response, Return.response_code.CONTRACT_VALIDATE_ERROR.name(), message);
+      return;
     } catch (Exception e) {
-      String errString = null;
-      if (e.getMessage() != null) {
-        errString = e.getMessage().replaceAll("[\"]", "\'");
-      }
-      retBuilder.setResult(false).setCode(Return.response_code.OTHER_ERROR)
-          .setMessage(ByteString.copyFromUtf8(e.getClass() + " : " + errString));
+      logger.warn("internal error", e);
+      Util.writeError(response, Return.response_code.OTHER_ERROR.name(), Util.INTERNAL_ERROR_MSG);
+      return;
     }
     estimateEnergyBuilder.setResult(retBuilder);
     response.getWriter().println(

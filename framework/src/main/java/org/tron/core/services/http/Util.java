@@ -85,6 +85,11 @@ public class Util {
   public static final String FUNCTION_PARAMETER = "parameter";
   public static final String CALL_DATA = "data";
 
+  public static final String INVALID_ADDRESS_BASE58CHECK =
+      "invalid address: base58check failed";
+  public static final String INVALID_HEX_LENGTH = "invalid hex: length must be even";
+  public static final String INTERNAL_ERROR_MSG = "internal error";
+
   public static boolean hasMeaningfulEvents(ProtocolStringList events) {
     return events.stream().anyMatch(s -> !s.isEmpty());
   }
@@ -661,6 +666,80 @@ public class Util {
       throw new InvalidParameterException("While trying to deploy, "
           + FUNCTION_SELECTOR + " and " + CALL_DATA + " can not be both set.");
     }
+    boolean visible = false;
+    if (jsonObject.containsKey(VISIBLE)) {
+      visible = Boolean.parseBoolean(jsonObject.getString(VISIBLE));
+    }
+    validateAddressesAndHex(jsonObject, visible);
+  }
+
+  /**
+   * Validate address encoding and hex payload length for TVM HTTP APIs.
+   * Base58Check addresses are checked when {@code visible} is true; hex
+   * fields must have even length.
+   */
+  public static void validateAddressesAndHex(JSONObject jsonObject, boolean visible) {
+    validateAddressValue(jsonObject.getString(OWNER_ADDRESS), visible);
+    validateAddressValue(jsonObject.getString(CONTRACT_ADDRESS), visible);
+    validateHexString(jsonObject.getString(FUNCTION_PARAMETER));
+    validateHexString(jsonObject.getString(CALL_DATA));
+  }
+
+  /**
+   * Validate a single address. Empty values are ignored so required-field
+   * checks can remain the caller's responsibility.
+   */
+  public static void validateAddressValue(String address, boolean visible) {
+    if (StringUtils.isEmpty(address)) {
+      return;
+    }
+    if (visible) {
+      byte[] decoded;
+      try {
+        decoded = decodeFromBase58Check(address);
+      } catch (IllegalArgumentException e) {
+        throw new InvalidParameterException(INVALID_ADDRESS_BASE58CHECK);
+      }
+      if (decoded == null) {
+        throw new InvalidParameterException(INVALID_ADDRESS_BASE58CHECK);
+      }
+    } else if ((address.length() & 1) != 0) {
+      throw new InvalidParameterException(INVALID_HEX_LENGTH);
+    }
+  }
+
+  /**
+   * Reject odd-length hex so {@code ByteArray.fromHexString} cannot NPE.
+   */
+  public static void validateHexString(String hex) {
+    if (StringUtils.isEmpty(hex)) {
+      return;
+    }
+    String value = hex;
+    if (value.length() >= 2
+        && (value.startsWith("0x") || value.startsWith("0X"))) {
+      value = value.substring(2);
+    }
+    if ((value.length() & 1) != 0) {
+      throw new InvalidParameterException(INVALID_HEX_LENGTH);
+    }
+  }
+
+  /**
+   * Write a sanitized HTTP API error. Parameter errors pass a stable
+   * client-facing message; internal errors must use {@link #INTERNAL_ERROR_MSG}
+   * and never include {@code e.getClass()} or {@code e.getMessage()}.
+   */
+  public static void writeError(HttpServletResponse response, String code, String message)
+      throws IOException {
+    String safeMessage = message == null ? INTERNAL_ERROR_MSG : message;
+    JSONObject result = new JSONObject();
+    result.put("result", false);
+    result.put("code", code);
+    result.put("message", safeMessage);
+    JSONObject json = new JSONObject();
+    json.put("result", result);
+    response.getWriter().println(json.toJSONString());
   }
 
   public static String getJsonString(String str) {

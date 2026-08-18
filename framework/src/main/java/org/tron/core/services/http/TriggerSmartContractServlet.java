@@ -41,6 +41,7 @@ public class TriggerSmartContractServlet extends RateLimiterServlet {
     if (StringUtil.isNullOrEmpty(jsonObject.getString(Util.CONTRACT_ADDRESS))) {
       throw new InvalidParameterException(Util.CONTRACT_ADDRESS + " isn't set.");
     }
+    Util.validateAddressesAndHex(jsonObject, Util.getVisiblePost(contract));
   }
 
   protected void doPost(HttpServletRequest request, HttpServletResponse response)
@@ -85,16 +86,17 @@ public class TriggerSmartContractServlet extends RateLimiterServlet {
       trx = Util.setTransactionPermissionId(jsonObject, trx);
       trxExtBuilder.setTransaction(trx);
       retBuilder.setResult(true).setCode(response_code.SUCCESS);
+    } catch (InvalidParameterException e) {
+      Util.writeError(response, response_code.OTHER_ERROR.name(), e.getMessage());
+      return;
     } catch (ContractValidateException e) {
-      retBuilder.setResult(false).setCode(response_code.CONTRACT_VALIDATE_ERROR)
-          .setMessage(ByteString.copyFromUtf8(e.getMessage()));
+      String message = e.getMessage() != null ? e.getMessage() : "contract validate error";
+      Util.writeError(response, response_code.CONTRACT_VALIDATE_ERROR.name(), message);
+      return;
     } catch (Exception e) {
-      String errString = null;
-      if (e.getMessage() != null) {
-        errString = e.getMessage().replaceAll("[\"]", "\'");
-      }
-      retBuilder.setResult(false).setCode(response_code.OTHER_ERROR)
-          .setMessage(ByteString.copyFromUtf8(e.getClass() + " : " + errString));
+      logger.warn("internal error", e);
+      Util.writeError(response, response_code.OTHER_ERROR.name(), Util.INTERNAL_ERROR_MSG);
+      return;
     }
     trxExtBuilder.setResult(retBuilder);
     response.getWriter().println(Util.printTransactionExtention(trxExtBuilder.build(), visible));
