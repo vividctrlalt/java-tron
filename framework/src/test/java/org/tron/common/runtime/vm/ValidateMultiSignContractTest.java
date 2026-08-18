@@ -51,6 +51,14 @@ public class ValidateMultiSignContractTest extends BaseTest {
     dbManager.getDynamicPropertiesStore().saveTotalSignNum(5);
   }
 
+  private void setAllowTvmOsaka(long allow) {
+    // initAllowTvmOsaka mutates globalSnapshot only. A leftover thread-local view
+    // from a prior constant-call would hide the Osaka guard (TIP-854 flake).
+    VMConfig.clearLocalSnapshot();
+    VMConfig.initAllowTvmOsaka(allow);
+    dbManager.getDynamicPropertiesStore().saveAllowTvmOsaka(allow);
+  }
+
   @Test
   public void testAddressNonExist() {
     byte[] hash = Hash.sha3(longData);
@@ -160,7 +168,7 @@ public class ValidateMultiSignContractTest extends BaseTest {
   // energy formula already assumes, returning (false, empty).
   @Test
   public void testTip854RejectsMalformedCalldata() {
-    VMConfig.initAllowTvmOsaka(1);
+    setAllowTvmOsaka(1);
     try {
       // Bucket 1: 32-aligned head + sub-word trailing bytes (r=1, r=31).
       for (int r : new int[]{1, 31}) {
@@ -187,7 +195,7 @@ public class ValidateMultiSignContractTest extends BaseTest {
       Assert.assertFalse("null calldata", ret.getLeft());
       Assert.assertSame(ByteUtil.EMPTY_BYTE_ARRAY, ret.getRight());
     } finally {
-      VMConfig.initAllowTvmOsaka(0);
+      setAllowTvmOsaka(0);
     }
   }
 
@@ -226,10 +234,10 @@ public class ValidateMultiSignContractTest extends BaseTest {
     signs.add(Hex.toHexString(key1.sign(toSign).toByteArray()));
     signs.add(Hex.toHexString(key2.sign(toSign).toByteArray()));
 
-    VMConfig.initAllowTvmOsaka(0);
+    setAllowTvmOsaka(0);
     Pair<Boolean, byte[]> pre =
         validateMultiSign(StringUtil.encode58Check(key.getAddress()), 2, data, signs);
-    VMConfig.initAllowTvmOsaka(1);
+    setAllowTvmOsaka(1);
     try {
       Pair<Boolean, byte[]> post =
           validateMultiSign(StringUtil.encode58Check(key.getAddress()), 2, data, signs);
@@ -237,7 +245,7 @@ public class ValidateMultiSignContractTest extends BaseTest {
       Assert.assertArrayEquals(pre.getValue(), post.getValue());
       Assert.assertArrayEquals(DataWord.ONE().getData(), post.getValue());
     } finally {
-      VMConfig.initAllowTvmOsaka(0);
+      setAllowTvmOsaka(0);
     }
   }
 
@@ -247,7 +255,7 @@ public class ValidateMultiSignContractTest extends BaseTest {
   // pre-activation failure mode the TIP explicitly preserves.
   @Test
   public void testTip854PreActivationNoOp() {
-    VMConfig.initAllowTvmOsaka(0);
+    setAllowTvmOsaka(0);
     contract.setRepository(RepositoryImpl.createRoot(StoreFactory.getInstance()));
     try {
       Pair<Boolean, byte[]> ret = contract.execute(new byte[(5 + 1) * 32]);

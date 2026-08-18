@@ -6,7 +6,9 @@ import com.google.gson.JsonParser;
 import com.google.protobuf.ByteString;
 import java.io.IOException;
 import java.math.BigInteger;
+import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Objects;
 import java.util.Random;
@@ -343,8 +345,12 @@ public class PublicMethod {
   }
 
   private static boolean checkPortAvailable(int port) throws IOException {
-    try (java.net.ServerSocket ss = new java.net.ServerSocket(port)) {
+    // BackupServer binds UDP; a TCP-only probe can return a port that is still
+    // held by another maxParallelForks worker's NioDatagramChannel.
+    try (ServerSocket ss = new ServerSocket(port);
+         DatagramSocket ds = new DatagramSocket(port)) {
       ss.setReuseAddress(true);
+      ds.setReuseAddress(true);
       return true;
     } catch (IOException e) {
       return false;
