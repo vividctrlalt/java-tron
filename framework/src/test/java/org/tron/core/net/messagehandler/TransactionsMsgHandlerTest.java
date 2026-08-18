@@ -80,7 +80,7 @@ public class TransactionsMsgHandlerTest extends BaseTest {
       Item item = new Item(new TransactionMessage(trx).getMessageId(),
           Protocol.Inventory.InventoryType.TRX);
       advInvRequest.put(item, 0L);
-      Mockito.when(peer.getAdvInvRequest()).thenReturn(advInvRequest);
+      Mockito.doReturn(advInvRequest).when(peer).getAdvInvRequest();
 
       List<Protocol.Transaction> transactionList = new ArrayList<>();
       transactionList.add(trx);
@@ -103,7 +103,7 @@ public class TransactionsMsgHandlerTest extends BaseTest {
       Item item1 = new Item(new TransactionMessage(trx1).getMessageId(),
           Protocol.Inventory.InventoryType.TRX);
       advInvRequest1.put(item1, 0L);
-      Mockito.when(peer.getAdvInvRequest()).thenReturn(advInvRequest1);
+      Mockito.doReturn(advInvRequest1).when(peer).getAdvInvRequest();
       List<Protocol.Transaction> transactionList1 = new ArrayList<>();
       transactionList1.add(trx1);
       transactionsMsgHandler.processMessage(peer, new TransactionsMessage(transactionList1));
@@ -125,7 +125,7 @@ public class TransactionsMsgHandlerTest extends BaseTest {
       Item item2 = new Item(new TransactionMessage(trx2).getMessageId(),
           Protocol.Inventory.InventoryType.TRX);
       advInvRequest2.put(item2, 0L);
-      Mockito.when(peer.getAdvInvRequest()).thenReturn(advInvRequest2);
+      Mockito.doReturn(advInvRequest2).when(peer).getAdvInvRequest();
       try {
         transactionsMsgHandler.processMessage(peer, new TransactionsMessage(transactionList2));
       } catch (Exception ep) {
@@ -231,7 +231,10 @@ public class TransactionsMsgHandlerTest extends BaseTest {
           Protocol.Inventory.InventoryType.TRX);
       advInvRequest.put(item, 0L);
     }
-    Mockito.when(peer.getAdvInvRequest()).thenReturn(advInvRequest);
+    // doReturn avoids Mockito's when(mock.foo()) recording race when handleTransaction
+    // concurrently calls isBadPeer() on the same mock (Rocky CI WrongTypeOfReturnValue).
+    Mockito.doReturn(advInvRequest).when(peer).getAdvInvRequest();
+    Mockito.doReturn(false).when(peer).isBadPeer();
   }
 
   @Test
@@ -324,7 +327,7 @@ public class TransactionsMsgHandlerTest extends BaseTest {
       Item item = new Item(trxMsg.getMessageId(), Protocol.Inventory.InventoryType.TRX);
       Map<Item, Long> advInvRequest = new ConcurrentHashMap<>();
       advInvRequest.put(item, System.currentTimeMillis());
-      Mockito.when(peer.getAdvInvRequest()).thenReturn(advInvRequest);
+      Mockito.doReturn(advInvRequest).when(peer).getAdvInvRequest();
 
       try {
         handler.processMessage(peer, msg);
@@ -342,8 +345,6 @@ public class TransactionsMsgHandlerTest extends BaseTest {
     TransactionsMsgHandler handler = new TransactionsMsgHandler();
     handler.init();
     try {
-      PeerConnection peer = Mockito.mock(PeerConnection.class);
-
       BalanceContract.TransferContract transferContract = BalanceContract.TransferContract
           .newBuilder()
           .setAmount(10)
@@ -363,9 +364,10 @@ public class TransactionsMsgHandlerTest extends BaseTest {
 
       List<Protocol.Transaction> shortList = new ArrayList<>();
       shortList.add(shortSigTrx);
-      stubAdvInvRequest(peer, new TransactionsMessage(shortList));
+      PeerConnection shortPeer = Mockito.mock(PeerConnection.class);
+      stubAdvInvRequest(shortPeer, new TransactionsMessage(shortList));
       P2pException shortEx = Assert.assertThrows(P2pException.class,
-          () -> handler.processMessage(peer, new TransactionsMessage(shortList)));
+          () -> handler.processMessage(shortPeer, new TransactionsMessage(shortList)));
       Assert.assertEquals(TypeEnum.BAD_TRX, shortEx.getType());
 
       // signature longer than 68 bytes → BAD_TRX
@@ -381,9 +383,10 @@ public class TransactionsMsgHandlerTest extends BaseTest {
 
       List<Protocol.Transaction> longList = new ArrayList<>();
       longList.add(longSigTrx);
-      stubAdvInvRequest(peer, new TransactionsMessage(longList));
+      PeerConnection longPeer = Mockito.mock(PeerConnection.class);
+      stubAdvInvRequest(longPeer, new TransactionsMessage(longList));
       P2pException longEx = Assert.assertThrows(P2pException.class,
-          () -> handler.processMessage(peer, new TransactionsMessage(longList)));
+          () -> handler.processMessage(longPeer, new TransactionsMessage(longList)));
       Assert.assertEquals(TypeEnum.BAD_TRX, longEx.getType());
 
       // exactly 65 bytes → passes the length check (no P2pException from check)
@@ -399,8 +402,9 @@ public class TransactionsMsgHandlerTest extends BaseTest {
 
       List<Protocol.Transaction> validList = new ArrayList<>();
       validList.add(validSigTrx);
-      stubAdvInvRequest(peer, new TransactionsMessage(validList));
-      handler.processMessage(peer, new TransactionsMessage(validList));
+      PeerConnection validPeer = Mockito.mock(PeerConnection.class);
+      stubAdvInvRequest(validPeer, new TransactionsMessage(validList));
+      handler.processMessage(validPeer, new TransactionsMessage(validList));
 
       // 68 bytes (upper bound) also passes the length check
       Protocol.Transaction paddedSigTrx = Protocol.Transaction.newBuilder()
@@ -415,8 +419,9 @@ public class TransactionsMsgHandlerTest extends BaseTest {
 
       List<Protocol.Transaction> paddedList = new ArrayList<>();
       paddedList.add(paddedSigTrx);
-      stubAdvInvRequest(peer, new TransactionsMessage(paddedList));
-      handler.processMessage(peer, new TransactionsMessage(paddedList));
+      PeerConnection paddedPeer = Mockito.mock(PeerConnection.class);
+      stubAdvInvRequest(paddedPeer, new TransactionsMessage(paddedList));
+      handler.processMessage(paddedPeer, new TransactionsMessage(paddedList));
     } finally {
       handler.close();
     }
