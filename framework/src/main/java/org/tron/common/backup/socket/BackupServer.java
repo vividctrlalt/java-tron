@@ -27,7 +27,7 @@ public class BackupServer implements AutoCloseable {
 
   private BackupManager backupManager;
 
-  private Channel channel;
+  private volatile Channel channel;
 
   private volatile boolean shutdown = false;
 
@@ -50,6 +50,11 @@ public class BackupServer implements AutoCloseable {
         }
       });
     }
+  }
+
+  public boolean isBound() {
+    Channel ch = channel;
+    return ch != null && ch.isActive();
   }
 
   private void start() throws Exception {
@@ -77,6 +82,12 @@ public class BackupServer implements AutoCloseable {
 
         logger.info("Backup server started, bind port {}", port);
 
+        // close() may have raced the bind: without this, closeFuture.sync() waits forever
+        // because close() saw a still-null channel and skipped channel.close().
+        if (shutdown) {
+          channel.close();
+        }
+
         channel.closeFuture().sync();
         if (shutdown) {
           logger.info("Shutdown backup BackupServer");
@@ -95,7 +106,9 @@ public class BackupServer implements AutoCloseable {
   public void close() {
     logger.info("Closing backup server...");
     shutdown = true;
-    backupManager.stop();
+    // Close the datagram channel first so start() can leave closeFuture.sync().
+    // BackupManager.stop() awaits its scheduler for up to 60s; doing that first
+    // ate the JUnit 60s timeout on slow Rocky Linux CI before the channel closed.
     if (channel != null) {
       try {
         channel.close().await(10, TimeUnit.SECONDS);
@@ -103,6 +116,7 @@ public class BackupServer implements AutoCloseable {
         logger.warn("Closing backup server failed.", e);
       }
     }
+    backupManager.stop();
     ExecutorServiceManager.shutdownAndAwaitTermination(executor, name);
     logger.info("Backup server closed.");
   }

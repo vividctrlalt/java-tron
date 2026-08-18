@@ -14,6 +14,8 @@ import org.tron.core.ChainBaseManager;
 import org.tron.core.config.DefaultConfig;
 import org.tron.core.config.args.Args;
 import org.tron.core.db.Manager;
+import org.tron.core.vm.config.ConfigLoader;
+import org.tron.core.vm.config.VMConfig;
 
 /**
  * Base class for tests that need a fresh Spring context per test method.
@@ -82,6 +84,10 @@ public abstract class BaseMethodTest {
       context.close(); // triggers appT.shutdown() via TronApplicationContext
     }
     Args.clearParam();
+    // forkEvery=100 reuses this JVM/thread: drop leftover TVM flags so the next
+    // class does not see ConfigLoader.disable=true or a stale local snapshot.
+    VMConfig.clearLocalSnapshot();
+    ConfigLoader.disable = false;
   }
 
   protected void beforeDestroy() {
