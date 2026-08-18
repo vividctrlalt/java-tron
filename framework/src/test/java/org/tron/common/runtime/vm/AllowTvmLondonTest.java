@@ -5,6 +5,7 @@ import static org.tron.common.utils.ByteUtil.longTo32Bytes;
 import java.util.Collections;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.util.encoders.Hex;
+import org.junit.After;
 import org.junit.Assert;
 import org.junit.Test;
 import org.tron.common.runtime.TVMTestResult;
@@ -30,16 +31,31 @@ public class AllowTvmLondonTest extends VMTestBase {
 
   }*/
 
-  @Test
-  public void testBaseFee() throws ContractExeException, ReceiptCheckErrException,
-      VMIllegalException, ContractValidateException {
+  private void enableLondon() {
+    // Drop a leftover thread-local snapshot from a prior constant-call in this JVM
+    // (forkEvery=100). initAllowTvmLondon() only mutates globalSnapshot.
+    VMConfig.clearLocalSnapshot();
     ConfigLoader.disable = true;
     VMConfig.initAllowTvmTransferTrc10(1);
     VMConfig.initAllowTvmConstantinople(1);
     VMConfig.initAllowTvmSolidity059(1);
     VMConfig.initAllowTvmIstanbul(1);
     VMConfig.initAllowTvmLondon(1);
+    manager.getDynamicPropertiesStore().saveAllowTvmLondon(1);
     manager.getDynamicPropertiesStore().saveChangeDelegation(1);
+  }
+
+  @After
+  public void resetVmFlags() {
+    VMConfig.clearLocalSnapshot();
+    ConfigLoader.disable = false;
+    VMConfig.initAllowTvmLondon(0);
+  }
+
+  @Test
+  public void testBaseFee() throws ContractExeException, ReceiptCheckErrException,
+      VMIllegalException, ContractValidateException {
+    enableLondon();
 
     String contractName = "testBaseFee";
     byte[] address = Hex.decode(OWNER_ADDRESS);
@@ -81,13 +97,7 @@ public class AllowTvmLondonTest extends VMTestBase {
   @Test
   public void testStartWithEF() throws ContractExeException, ReceiptCheckErrException,
       VMIllegalException, ContractValidateException {
-    ConfigLoader.disable = true;
-    VMConfig.initAllowTvmTransferTrc10(1);
-    VMConfig.initAllowTvmConstantinople(1);
-    VMConfig.initAllowTvmSolidity059(1);
-    VMConfig.initAllowTvmIstanbul(1);
-    VMConfig.initAllowTvmLondon(1);
-    manager.getDynamicPropertiesStore().saveChangeDelegation(1);
+    enableLondon();
 
     String contractName = "testStartWithEF";
     byte[] address = Hex.decode(OWNER_ADDRESS);
