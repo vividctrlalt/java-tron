@@ -35,7 +35,7 @@
 
 所以：新生产代码加了第二份配置，测试仍走旧写路径。一个进程里两套真相，读新写旧。
 
-## 为什么僅 Rocky 红
+## 为什么只有 Rocky 红
 
 洞在所有平台都在。`framework/build.gradle`：`maxParallelForks = min(4, ncpu)`，`forkEvery = 100`，大约 100 个方法共用一个 JVM、同一条测试线程。
 
