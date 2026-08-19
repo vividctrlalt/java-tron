@@ -1,55 +1,54 @@
-# Rocky Linux CI flake：VMConfig 读写不在同一份状态上
+# VMConfig isolation and intermittent Rocky Linux test failures
 
-本文只记录原因，不含 HTTP / #6523 改动。修复在 `fix/rocky_ci_flakes`（fork PR #16）。
+## Summary
 
-## 现象
+Intermittent `:framework:test` failures on Rocky Linux JDK 8 are caused by a split read/write path in `VMConfig` introduced by #6857. The same commit is green on Debian 11 JDK 8, Ubuntu, and macOS. The failing tests are existing VM / net / backup cases, not a product regression in the HTTP API.
 
-- 仓库：`vividctrlalt/java-tron` PR #15，commit `18992c0`，与当时官方 `develop` `4a21592` 一致。
-- GitHub Actions run `32169085226`：Rocky Linux JDK 8 的 `:framework:test` 失败（3197 测试，10 失败）。
-- 同一 commit 上 Debian 11 JDK 8、Ubuntu 24、macOS、smoke、coverage 都绿。
-- 失败的不是 HTTP servlet 测试，重跑 Rocky job 后过了。
+## Symptom
 
-独特失败：
+On Rocky Linux JDK 8 (`rockylinux:8`, OpenJDK 8), `:framework:test` can fail with a small set of errors that disappear on rerun:
 
-1. `AllowTvmLondonTest.testBaseFee` / `testStartWithEF`
-2. `ValidateMultiSignContractTest.testTip854RejectsMalformedCalldata`
-3. `BackupServerTest.test`（tearDown 60s 超时，重试 6 次）
-4. `TransactionsMsgHandlerTest.testInvalidSigLength`（Mockito 竞态）
+- `AllowTvmLondonTest.testBaseFee` / `testStartWithEF`: London appears off (`hReturn` empty instead of the energy fee; `0xEF` deploy not rejected).
+- `ValidateMultiSignContractTest.testTip854RejectsMalformedCalldata`: Osaka appears off (321-byte calldata is not rejected; assertion `non-32-aligned len=321`).
+- `BackupServerTest.test`: 60s timeout in `tearDown` → `BackupServer.close` → `shutdownAndAwaitTermination` (often retried).
+- `TransactionsMsgHandlerTest.testInvalidSigLength`: Mockito `WrongTypeOfReturnValue` (`ConcurrentHashMap` from `isBadPeer()`).
 
-## 代码根因
+`framework/build.gradle` runs tests with `maxParallelForks = min(4, ncpu)` and `forkEvery = 100`, so about 100 methods share one JVM and one test thread.
 
-`current()` 有 ThreadLocal 就读本地，`initAllowTvm*()` 只改 `globalSnapshot`。本地还在时，写 global 等于没写。
+## Root cause
 
-这一套双写路径是 [tronprotocol/java-tron#6857](https://github.com/tronprotocol/java-tron/pull/6857) （2026-06-26，`58f6e64`，作者 yanghang8612）带来的。
+#6857 (`58f6e64`, 2026-06-26) isolates constant-call config from the process-global `VMConfig` so a `triggerConstantContract` / `estimateEnergy` execution against a lagging solidity/PBFT snapshot cannot publish stale proposal flags into the block-processing path.
 
-#6857 要修的是线上共识：constant call 跑在落后的 solidity/PBFT 快照上，以前会把过期 proposal 写进进程全局 `VMConfig`，跟出块线程抢。做法是：
+The implementation is:
 
-- 旗标收成 `VMConfig.Snapshot`
-- 出块走 `globalSnapshot`
-- constant call 走 `ThreadLocal localSnapshot`
-- getter 统一 `current()`：有本地用本地，没有才用 global
+- Flags live in `VMConfig.Snapshot`.
+- Block processing installs `globalSnapshot` (volatile wholesale replace).
+- A constant call installs a `ThreadLocal` `localSnapshot`.
+- Getters use `current()`: return the thread-local snapshot when present, otherwise the global.
+- Production loading goes through `ConfigLoader.load(store, isolate)` → `setGlobalSnapshot` / `setLocalSnapshot`. `setGlobalSnapshot` also `remove()`s the thread-local view. `Wallet.callConstantContract` clears the local view in `finally`.
 
-`initAllowTvm*()` 故意只改 global，注释写明留给测试和老调用。生产加载走 `setGlobalSnapshot`（会 `localSnapshot.remove()`）。老测试仍用 `init*` + `ConfigLoader.disable = true`。`disable` 为 true 时 `load()` 是空操作，清不掉残留的本地快照。
+`initAllowTvm*()` was kept for tests and legacy callers. Those setters mutate **only** `globalSnapshot`. They do not clear or update `localSnapshot`.
 
-#6857 自己的 `VMConfigIsolationTest` 只测了「本地不污染别的线程」，没测「本线程还有 local 时 init 无效」。
+Therefore:
 
-所以：新生产代码加了第二份配置，测试仍走旧写路径。一个进程里两套真相，读新写旧。
+1. If a prior test on the same thread left a local snapshot (constant-call `load(..., isolate=true)`, or any path that called `setLocalSnapshot`), `current()` keeps reading that local view.
+2. A later test calls `initAllowTvmLondon(1)` / `initAllowTvmOsaka(1)` and believes the flag is on.
+3. `allowTvmLondon()` / `allowTvmOsaka()` still return the leftover local value.
+4. `ConfigLoader.disable = true` (test-only) makes `load()` a no-op, so the leftover is never replaced.
 
-## 为什么只有 Rocky 红
+#6857's `VMConfigIsolationTest` covers "a local view must not leak to another thread" and "`setGlobalSnapshot` drops the local view". It does not cover "`init*()` is a no-op for `current()` while a local snapshot remains on this thread".
 
-洞在所有平台都在。`framework/build.gradle`：`maxParallelForks = min(4, ncpu)`，`forkEvery = 100`，大约 100 个方法共用一个 JVM、同一条测试线程。
+`AllowTvmLondonTest` (present since 2021) and similar suites still use the pre-#6857 `init*` + `ConfigLoader.disable` pattern. They were not updated when the getter path changed.
 
-Rocky（rockylinux:8 OpenJDK 8）更慢：前一个测试留下的 ThreadLocal、BackupServer 等 1 秒再关、Mockito 和线程池抢同一个 mock，更容易撞上。Debian/Temurin 通常赶在窗口里跑完。重跑后绿，也是竞态，不是 Rocky 上有另一套业务逻辑。
+This is a dual source of truth: production writes snapshots; tests write global in place; reads always prefer thread-local.
 
-## 与 #6857 新测试的关系
+## Why Rocky Linux reproduces it more often
 
-不是 #6857 新写的测试写坏了。`VMConfigIsolationTest` 会清 ThreadLocal。挂的是更早的测试（`AllowTvmLondonTest` 从 2021 年就在）仍用 `init*`。
+The defect is platform-independent. Rocky Linux is slower (OpenJDK 8, tighter heap, slower scheduling), so leftover thread-local state, a 1s `sleep` before `BackupServer.close()`, and a Mockito stub racing `handleTransaction` on the same mock are more likely to hit. Debian/Temurin usually finishes inside the same window. A failed-job rerun going green is consistent with a race, not with a Rocky-specific functional bug.
 
-## 另外两条（不是同一个根）
+`BackupServerTest` and `TransactionsMsgHandlerTest` are separate isolation issues (non-volatile channel / close-before-bind / TCP-only port probe; `when(mock.foo())` vs concurrent `isBadPeer()`). They are not the `VMConfig` dual-write bug, but they surface on the same slow host.
 
-- **BackupServer**：`channel` 不是 volatile；`close()` 先 `stop()` 再关 UDP；Rocky 上 1 秒 sleep 不够则 channel 仍是 null；`chooseRandomPort()` 只探 TCP。
-- **TransactionsMsgHandlerTest**：`when(mock.foo())` 和线程池里的 `isBadPeer()` 打在同一个 mock 上，Mockito 不线程安全。
+## Related
 
-## Review
-
-#6857 指定 reviewer（排除作者后）只有 CodeNinjaEvan。三个 Approve 没有文字，从第一个 Approve 到 merge 约两分钟。aiden3885、SecretCipher7 不是 `vm` scope 的指定人。
+- https://github.com/tronprotocol/java-tron/pull/6857
+- https://github.com/tronprotocol/java-tron/commit/58f6e64bd8b7b3fd98af874c400032e6ccc83892
