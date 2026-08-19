@@ -3,6 +3,7 @@ package org.tron.common.backup;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -46,7 +47,10 @@ public class BackupServerTest {
   @Test(timeout = 60_000)
   public void test() throws InterruptedException {
     backupServer.initServer();
-    // wait for the server to start so channel is assigned before close() is called
-    Thread.sleep(1000);
+    long deadline = System.currentTimeMillis() + 15_000L;
+    while (!backupServer.isBound() && System.currentTimeMillis() < deadline) {
+      Thread.sleep(50);
+    }
+    Assert.assertTrue("BackupServer UDP channel did not bind", backupServer.isBound());
   }
 }

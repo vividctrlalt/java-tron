@@ -172,6 +172,14 @@ public class BackupManager implements EventHandler {
     }
   }
 
+  /**
+   * Stop the keep-alive scheduler without waiting so the UDP channel can be closed
+   * before a subsequent write() hits a closed channel.
+   */
+  public void stopScheduler() {
+    executorService.shutdown();
+  }
+
   public void stop() {
     ExecutorServiceManager.shutdownAndAwaitTermination(executorService, esName);
     if (dnsExecutorService != null) {
