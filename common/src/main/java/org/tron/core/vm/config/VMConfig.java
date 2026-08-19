@@ -100,108 +100,116 @@ public class VMConfig {
   // The init* setters below mutate the global (HEAD) config in place. They are kept for tests and
   // legacy callers; production config loading goes through ConfigLoader -> setGlobalSnapshot, which
   // publishes a fresh Snapshot wholesale via the volatile field.
+  //
+  // Drop any leftover thread-local view first. Getters use current() (local if present), so writing
+  // only globalSnapshot would leave a stale local snapshot shadowing the value just set.
+  private static Snapshot forInit() {
+    localSnapshot.remove();
+    return globalSnapshot;
+  }
+
   public static void initAllowMultiSign(long allow) {
-    globalSnapshot.allowMultiSign = allow == 1;
+    forInit().allowMultiSign = allow == 1;
   }
 
   public static void initAllowTvmTransferTrc10(long allow) {
-    globalSnapshot.allowTvmTransferTrc10 = allow == 1;
+    forInit().allowTvmTransferTrc10 = allow == 1;
   }
 
   public static void initAllowTvmConstantinople(long allow) {
-    globalSnapshot.allowTvmConstantinople = allow == 1;
+    forInit().allowTvmConstantinople = allow == 1;
   }
 
   public static void initAllowTvmSolidity059(long allow) {
-    globalSnapshot.allowTvmSolidity059 = allow == 1;
+    forInit().allowTvmSolidity059 = allow == 1;
   }
 
   public static void initAllowShieldedTRC20Transaction(long allow) {
-    globalSnapshot.allowShieldedTRC20Transaction = allow == 1;
+    forInit().allowShieldedTRC20Transaction = allow == 1;
   }
 
   public static void initAllowTvmIstanbul(long allow) {
-    globalSnapshot.allowTvmIstanbul = allow == 1;
+    forInit().allowTvmIstanbul = allow == 1;
   }
 
   public static void initAllowTvmFreeze(long allow) {
-    globalSnapshot.allowTvmFreeze = allow == 1;
+    forInit().allowTvmFreeze = allow == 1;
   }
 
   public static void initAllowTvmVote(long allow) {
-    globalSnapshot.allowTvmVote = allow == 1;
+    forInit().allowTvmVote = allow == 1;
   }
 
   public static void initAllowTvmLondon(long allow) {
-    globalSnapshot.allowTvmLondon = allow == 1;
+    forInit().allowTvmLondon = allow == 1;
   }
 
   public static void initAllowTvmCompatibleEvm(long allow) {
-    globalSnapshot.allowTvmCompatibleEvm = allow == 1;
+    forInit().allowTvmCompatibleEvm = allow == 1;
   }
 
   public static void initAllowHigherLimitForMaxCpuTimeOfOneTx(long allow) {
-    globalSnapshot.allowHigherLimitForMaxCpuTimeOfOneTx = allow == 1;
+    forInit().allowHigherLimitForMaxCpuTimeOfOneTx = allow == 1;
   }
 
   public static void initAllowTvmFreezeV2(long allow) {
-    globalSnapshot.allowTvmFreezeV2 = allow == 1;
+    forInit().allowTvmFreezeV2 = allow == 1;
   }
 
   public static void initAllowOptimizedReturnValueOfChainId(long allow) {
-    globalSnapshot.allowOptimizedReturnValueOfChainId = allow == 1;
+    forInit().allowOptimizedReturnValueOfChainId = allow == 1;
   }
 
   public static void initAllowDynamicEnergy(long allow) {
-    globalSnapshot.allowDynamicEnergy = allow == 1;
+    forInit().allowDynamicEnergy = allow == 1;
   }
 
   public static void initDynamicEnergyThreshold(long threshold) {
-    globalSnapshot.dynamicEnergyThreshold = threshold;
+    forInit().dynamicEnergyThreshold = threshold;
   }
 
   public static void initDynamicEnergyIncreaseFactor(long increaseFactor) {
-    globalSnapshot.dynamicEnergyIncreaseFactor = increaseFactor;
+    forInit().dynamicEnergyIncreaseFactor = increaseFactor;
   }
 
   public static void initDynamicEnergyMaxFactor(long maxFactor) {
-    globalSnapshot.dynamicEnergyMaxFactor = maxFactor;
+    forInit().dynamicEnergyMaxFactor = maxFactor;
   }
 
   public static void initAllowTvmShangHai(long allow) {
-    globalSnapshot.allowTvmShanghai = allow == 1;
+    forInit().allowTvmShanghai = allow == 1;
   }
 
   public static void initAllowEnergyAdjustment(long allow) {
-    globalSnapshot.allowEnergyAdjustment = allow == 1;
+    forInit().allowEnergyAdjustment = allow == 1;
   }
 
   public static void initAllowStrictMath(long allow) {
-    globalSnapshot.allowStrictMath = allow == 1;
+    forInit().allowStrictMath = allow == 1;
   }
 
   public static void initAllowTvmCancun(long allow) {
-    globalSnapshot.allowTvmCancun = allow == 1;
+    forInit().allowTvmCancun = allow == 1;
   }
 
   public static void initDisableJavaLangMath(long allow) {
-    globalSnapshot.disableJavaLangMath = allow == 1;
+    forInit().disableJavaLangMath = allow == 1;
   }
 
   public static void initAllowTvmBlob(long allow) {
-    globalSnapshot.allowTvmBlob = allow == 1;
+    forInit().allowTvmBlob = allow == 1;
   }
 
   public static void initAllowTvmSelfdestructRestriction(long allow) {
-    globalSnapshot.allowTvmSelfdestructRestriction = allow == 1;
+    forInit().allowTvmSelfdestructRestriction = allow == 1;
   }
 
   public static void initAllowTvmOsaka(long allow) {
-    globalSnapshot.allowTvmOsaka = allow == 1;
+    forInit().allowTvmOsaka = allow == 1;
   }
 
   public static void initAllowHardenResourceCalculation(long allow) {
-    globalSnapshot.allowHardenResourceCalculation = allow == 1;
+    forInit().allowHardenResourceCalculation = allow == 1;
   }
 
   public static boolean getEnergyLimitHardFork() {

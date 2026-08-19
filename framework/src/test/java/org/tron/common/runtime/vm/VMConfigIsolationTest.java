@@ -73,6 +73,13 @@ public class VMConfigIsolationTest {
     assertFalse("setGlobalSnapshot must drop the thread-local view", VMConfig.allowTvmOsaka());
   }
 
+  @Test
+  public void testInitIsVisibleWhenLocalSnapshotExists() {
+    VMConfig.setLocalSnapshot(new VMConfig.Snapshot());
+    VMConfig.initAllowTvmLondon(1);
+    assertTrue("init* must not be shadowed by a stale local view", VMConfig.allowTvmLondon());
+  }
+
   // Deep-copy the current global config through the public getters (no thread-local set here, so
   // the getters read the global) so @After can restore the exact prior state.
   private static VMConfig.Snapshot snapshotGlobal() {
