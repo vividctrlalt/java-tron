@@ -343,8 +343,8 @@ public class PublicMethod {
   }
 
   private static boolean checkPortAvailable(int port) throws IOException {
-    try (java.net.ServerSocket ss = new java.net.ServerSocket(port)) {
-      ss.setReuseAddress(true);
+    try (java.net.ServerSocket ss = new java.net.ServerSocket(port);
+         java.net.DatagramSocket ds = new java.net.DatagramSocket(port)) {
       return true;
     } catch (IOException e) {
       return false;

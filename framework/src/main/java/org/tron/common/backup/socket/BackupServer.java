@@ -27,7 +27,8 @@ public class BackupServer implements AutoCloseable {
 
   private BackupManager backupManager;
 
-  private Channel channel;
+  // volatile: Dekker pairing with shutdown so close() observes bind and start() observes close.
+  private volatile Channel channel;
 
   private volatile boolean shutdown = false;
 
@@ -50,6 +51,11 @@ public class BackupServer implements AutoCloseable {
         }
       });
     }
+  }
+
+  public boolean isBound() {
+    Channel ch = channel;
+    return ch != null && ch.isActive();
   }
 
   private void start() throws Exception {
@@ -77,6 +83,11 @@ public class BackupServer implements AutoCloseable {
 
         logger.info("Backup server started, bind port {}", port);
 
+        // close() may have raced bind (Dekker). Close now so closeFuture.sync() cannot hang.
+        if (shutdown) {
+          channel.close();
+        }
+
         channel.closeFuture().sync();
         if (shutdown) {
           logger.info("Shutdown backup BackupServer");
@@ -95,7 +106,8 @@ public class BackupServer implements AutoCloseable {
   public void close() {
     logger.info("Closing backup server...");
     shutdown = true;
-    backupManager.stop();
+    // Stop keep-alive first (no wait) so it cannot write() after the channel is closed.
+    backupManager.stopScheduler();
     if (channel != null) {
       try {
         channel.close().await(10, TimeUnit.SECONDS);
@@ -103,6 +115,7 @@ public class BackupServer implements AutoCloseable {
         logger.warn("Closing backup server failed.", e);
       }
     }
+    backupManager.stop();
     ExecutorServiceManager.shutdownAndAwaitTermination(executor, name);
     logger.info("Backup server closed.");
   }
